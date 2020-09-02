@@ -1,7 +1,8 @@
 package cmd
 
 import (
-	"encoding/binary"
+	"github.com/rueian/aerial/pkg/buffer"
+	"github.com/rueian/aerial/pkg/tunnel"
 	"github.com/spf13/cobra"
 	"io"
 	"log"
@@ -29,49 +30,26 @@ var serverCmd = &cobra.Command{
 			go func(conn net.Conn) {
 				defer conn.Close()
 
-				req := make([]byte, 5) // 1 byte type + 4 byte length
-				if _, err := io.ReadFull(conn, req); err != nil {
+				msg := tunnel.Message{}
+				if _, err := msg.ReadFrom(conn); err != nil {
 					log.Println(err)
 					return
 				}
 
-				var so net.Listener
-				switch req[0] {
-				case 't':
-					so, err = net.Listen("tcp", ":0")
-				case 'd':
-					so, err = net.Listen("udp", ":0")
-				default:
-					return
-				}
-
+				so, err := net.Listen("tcp", ":0")
 				if err != nil {
 					log.Println(err)
 					return
 				}
-
 				defer so.Close()
 
-				var p uint32
-				switch req[0] {
-				case 't':
-					p = uint32(so.Addr().(*net.TCPAddr).Port)
-				case 'd':
-					p = uint32(so.Addr().(*net.UDPAddr).Port)
-				}
-				head := make([]byte, 9)
-				head[0] = 'p'
-				binary.BigEndian.PutUint32(head[1:5], 4)
-				binary.BigEndian.PutUint32(head[5:9], p)
-				if _, err := conn.Write(head); err != nil {
+				msg = tunnel.Message{Type: 'p', Conn: uint32(so.Addr().(*net.TCPAddr).Port)}
+				if _, err := msg.WriteTo(conn); err != nil {
 					log.Println(err)
 					return
 				}
 
-				var mu = sync.Mutex{}
-				var sos = map[uint32]net.Conn{}
-
-				// read so, write to conn
+				var sos = sync.Map{}
 				go func() {
 					for id := uint32(0); ; id++ {
 						cn, err := so.Accept()
@@ -79,29 +57,22 @@ var serverCmd = &cobra.Command{
 							log.Println(err)
 							return
 						}
-
-						mu.Lock()
-						sos[id] = cn
-						mu.Unlock()
+						sos.Store(id, cn)
 
 						go func(cn net.Conn, id uint32) {
+							log.Println("redirecting", cn.LocalAddr(), cn.RemoteAddr())
 							defer func() {
 								cn.Close()
-								mu.Lock()
-								delete(sos, id)
-								mu.Unlock()
+								sos.Delete(id)
 							}()
-							buf := make([]byte, 1024)
 							for {
+								buf := buffer.PoolK.Get()
 								n, err := cn.Read(buf)
 								if n > 0 {
-									head := make([]byte, 9)
-									head[0] = 'm'
-									binary.BigEndian.PutUint32(head[1:5], uint32(n)+4)
-									binary.BigEndian.PutUint32(head[5:9], id)
-									conn.Write(head)
-									conn.Write(buf[:n])
+									msg := tunnel.Message{Type: 'm', Conn: id, Body: buf[:n]}
+									msg.WriteTo(conn)
 								}
+								buffer.PoolK.Put(buf)
 								if err == io.EOF {
 									return
 								}
@@ -115,21 +86,14 @@ var serverCmd = &cobra.Command{
 				}()
 
 				for {
-					if _, err := io.ReadFull(conn, req); err != nil {
-						log.Println(err)
+					if _, err := msg.ReadFrom(conn); err != nil {
+						if err != io.EOF {
+							log.Println(err)
+						}
 						return
 					}
-					buf := make([]byte, int(binary.BigEndian.Uint32(req[1:5])))
-					if _, err := io.ReadFull(conn, buf); err != nil {
-						log.Println(err)
-						return
-					}
-					id := binary.BigEndian.Uint32(buf[:4])
-					mu.Lock()
-					so, ok := sos[id]
-					mu.Unlock()
-					if ok {
-						so.Write(buf[4:])
+					if conn, ok := sos.Load(msg.Conn); ok {
+						conn.(net.Conn).Write(msg.Body)
 					}
 				}
 			}(conn)
