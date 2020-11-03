@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/rueian/aerial/pkg/buffer"
+	"github.com/rueian/aerial/pkg/hook"
 	"github.com/rueian/aerial/pkg/tunnel"
 	"github.com/spf13/cobra"
 	"io"
@@ -42,6 +43,13 @@ var serverCmd = &cobra.Command{
 					return
 				}
 				defer so.Close()
+
+				if ctx, err := hook.OnBind(so.Addr()); err != nil {
+					log.Println(err)
+					return
+				} else {
+					defer hook.OnClose(ctx)
+				}
 
 				msg = tunnel.Message{Type: 'p', Conn: uint32(so.Addr().(*net.TCPAddr).Port)}
 				if _, err := msg.WriteTo(conn); err != nil {
