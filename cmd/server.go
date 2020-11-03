@@ -44,7 +44,7 @@ var serverCmd = &cobra.Command{
 				}
 				defer so.Close()
 
-				if ctx, err := hook.OnBind(so.Addr()); err != nil {
+				if ctx, err := hook.OnBind(msg, so.Addr()); err != nil {
 					log.Println(err)
 					return
 				} else {
