@@ -20,6 +20,6 @@ var httpCmd = &cobra.Command{
 }
 
 func init() {
-	httpCmd.Flags().StringVarP(&bind, "bind", "b", "localhost:9999", "target server addr")
+	httpCmd.Flags().StringVarP(&bind, "bind", "b", "0.0.0.0:9999", "target server addr")
 	rootCmd.AddCommand(httpCmd)
 }
