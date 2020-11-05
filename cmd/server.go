@@ -46,15 +46,16 @@ var serverCmd = &cobra.Command{
 
 				if ctx, err := hook.OnBind(msg, so.Addr()); err != nil {
 					log.Println(err)
+					msg = tunnel.Message{Type: 'p', Body: []byte(err.Error())}
+					_, _ = msg.WriteTo(conn)
 					return
 				} else {
 					defer hook.OnClose(ctx)
-				}
-
-				msg = tunnel.Message{Type: 'p', Conn: uint32(so.Addr().(*net.TCPAddr).Port)}
-				if _, err := msg.WriteTo(conn); err != nil {
-					log.Println(err)
-					return
+					msg = tunnel.Message{Type: 'p', Conn: uint32(so.Addr().(*net.TCPAddr).Port)}
+					if _, err := msg.WriteTo(conn); err != nil {
+						log.Println(err)
+						return
+					}
 				}
 
 				var sos = sync.Map{}
