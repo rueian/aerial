@@ -4,12 +4,19 @@ import (
 	"github.com/spf13/cobra"
 	"net/http"
 	"net/http/httputil"
+	"strconv"
 )
+
+var reply string
 
 var httpCmd = &cobra.Command{
 	Use: "http",
 	Run: func(cmd *cobra.Command, args []string) {
-		http.ListenAndServe(bind, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		http.ListenAndServe(":"+strconv.FormatInt(port, 10), http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if reply != "" {
+				w.Write([]byte(reply))
+				return
+			}
 			res, err := httputil.DumpRequest(req, true)
 			if err != nil {
 				panic(err)
@@ -20,6 +27,6 @@ var httpCmd = &cobra.Command{
 }
 
 func init() {
-	httpCmd.Flags().StringVarP(&bind, "bind", "b", "0.0.0.0:9999", "target server addr")
+	httpCmd.Flags().StringVarP(&reply, "reply", "r", "", "static http reply")
 	rootCmd.AddCommand(httpCmd)
 }
