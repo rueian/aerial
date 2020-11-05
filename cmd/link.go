@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"github.com/rueian/aerial/pkg/buffer"
+	"github.com/rueian/aerial/pkg/hook"
 	"github.com/rueian/aerial/pkg/tunnel"
 	"github.com/spf13/cobra"
 	"io"
@@ -14,23 +15,19 @@ import (
 
 var addr string
 var bind string
-var labels []string
+var svc string
 var params []string
 
 var linkCmd = &cobra.Command{
 	Use: "link",
 	Run: func(cmd *cobra.Command, args []string) {
-		init := map[string]map[string]string{
-			"labels": {},
-			"params": {},
-		}
-		for _, v := range labels {
-			vp := strings.SplitN(v, "=", 2)
-			init["labels"][vp[0]] = vp[1]
+		init := hook.Init{
+			Svc:    svc,
+			Params: map[string]string{},
 		}
 		for _, v := range params {
 			vp := strings.SplitN(v, "=", 2)
-			init["params"][vp[0]] = vp[1]
+			init.Params[vp[0]] = vp[1]
 		}
 
 		bs, err := json.Marshal(init)
@@ -50,6 +47,10 @@ var linkCmd = &cobra.Command{
 
 		if _, err := msg.ReadFrom(conn); err != nil {
 			log.Fatal(err)
+		}
+		if msg.Conn == 0 {
+			log.Println("server error: ", string(msg.Body))
+			return
 		}
 		log.Println("server started at", msg.Conn)
 
@@ -100,8 +101,8 @@ var linkCmd = &cobra.Command{
 
 func init() {
 	linkCmd.Flags().StringVarP(&addr, "addr", "a", "localhost:8080", "aerial server addr")
-	linkCmd.Flags().StringVarP(&bind, "bind", "b", "localhost:9999", "target server addr")
-	linkCmd.Flags().StringArrayVarP(&labels, "label", "l", nil, "--label key=value")
+	linkCmd.Flags().StringVarP(&bind, "bind", "b", "localhost:9999", "local target server addr")
+	linkCmd.Flags().StringVarP(&svc, "svc", "s", "svc:9999", "cluster target server addr")
 	linkCmd.Flags().StringArrayVarP(&params, "param", "p", nil, "--param key=value")
 	rootCmd.AddCommand(linkCmd)
 }
