@@ -64,15 +64,19 @@ var linkCmd = &cobra.Command{
 				so, err = net.Dial("tcp", bind)
 				if err != nil {
 					log.Println(err)
+					msg := tunnel.Message{Type: 'c', Conn: msg.Conn}
+					msg.WriteTo(conn)
 					continue
 				}
 				log.Println("redirecting", bind)
 				sos.Store(msg.Conn, so)
-				go func() {
-					defer func() {
+				go func(id uint32) {
+					defer func(id uint32) {
+						msg := tunnel.Message{Type: 'c', Conn: id}
+						msg.WriteTo(conn)
 						so.(net.Conn).Close()
-						sos.Delete(msg.Conn)
-					}()
+						sos.Delete(id)
+					}(id)
 
 					for {
 						buf := buffer.PoolK.Get()
@@ -90,10 +94,14 @@ var linkCmd = &cobra.Command{
 							return
 						}
 					}
-				}()
+				}(msg.Conn)
 			}
 			if _, err := so.(net.Conn).Write(msg.Body); err != nil {
 				log.Println(err)
+			}
+			if msg.Type == 'c' {
+				so.(net.Conn).Close()
+				sos.Delete(msg.Conn)
 			}
 		}
 	},

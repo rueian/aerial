@@ -22,6 +22,9 @@ var serverCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 		defer ln.Close()
+
+		log.Println("tunnel server started at port:", port)
+
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
@@ -51,11 +54,12 @@ var serverCmd = &cobra.Command{
 					return
 				} else {
 					defer hook.OnClose(ctx)
-					msg = tunnel.Message{Type: 'p', Conn: uint32(so.Addr().(*net.TCPAddr).Port)}
-					if _, err := msg.WriteTo(conn); err != nil {
-						log.Println(err)
-						return
-					}
+				}
+
+				msg = tunnel.Message{Type: 'p', Conn: uint32(so.Addr().(*net.TCPAddr).Port)}
+				if _, err := msg.WriteTo(conn); err != nil {
+					log.Println(err)
+					return
 				}
 
 				var sos = sync.Map{}
@@ -69,11 +73,14 @@ var serverCmd = &cobra.Command{
 						sos.Store(id, cn)
 
 						go func(cn net.Conn, id uint32) {
-							log.Println("redirecting", cn.LocalAddr(), cn.RemoteAddr())
-							defer func() {
+							log.Println("redirecting", cn.LocalAddr(), cn.RemoteAddr(), id)
+							defer func(cn net.Conn, id uint32) {
+								log.Println("close", cn.LocalAddr(), cn.RemoteAddr(), id)
+								msg := tunnel.Message{Type: 'c', Conn: id}
+								msg.WriteTo(conn)
 								cn.Close()
 								sos.Delete(id)
-							}()
+							}(cn, id)
 							for {
 								buf := buffer.PoolK.Get()
 								n, err := cn.Read(buf)
@@ -102,7 +109,12 @@ var serverCmd = &cobra.Command{
 						return
 					}
 					if conn, ok := sos.Load(msg.Conn); ok {
-						conn.(net.Conn).Write(msg.Body)
+						conn := conn.(net.Conn)
+						conn.Write(msg.Body)
+						if msg.Type == 'c' {
+							conn.Close()
+							sos.Delete(msg.Conn)
+						}
 					}
 				}
 			}(conn)
