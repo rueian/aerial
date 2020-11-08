@@ -4,7 +4,6 @@ go 1.14
 
 require (
 	github.com/cilium/cilium v1.8.5
-	github.com/googleapis/gnostic v0.5.3 // indirect
 	github.com/spf13/cobra v1.0.0
 	k8s.io/api v0.19.3
 	k8s.io/apimachinery v0.19.3

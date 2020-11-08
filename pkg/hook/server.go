@@ -11,12 +11,15 @@ import (
 	"github.com/cilium/cilium/pkg/policy/api"
 	"github.com/rueian/aerial/pkg/tunnel"
 	apiv1 "k8s.io/api/core/v1"
+	kerrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
+	"log"
 	"net"
 	"regexp"
 	"strconv"
+	"time"
 )
 
 const CiliumNamespace = "default"
@@ -26,9 +29,9 @@ type Init struct {
 	Params map[string]string
 }
 
-func OnBind(msg tunnel.Message, addr net.Addr) (interface{}, error) {
-	init := Init{}
-	if err := json.Unmarshal(msg.Body, &init); err != nil {
+func OnBind(msg tunnel.Message, addr net.Addr) (res interface{}, err error) {
+	init := &Init{}
+	if err := json.Unmarshal(msg.Body, init); err != nil {
 		return nil, err
 	}
 
@@ -91,15 +94,13 @@ port:
 	return nil, errors.New("service port not found")
 crd:
 
-	name := regexp.MustCompile("[:.\\[\\]]").ReplaceAllString(init.Svc+"-"+init.Params["ProxyAddr"], "-")
-
-	return ciliumClient.CiliumV2().CiliumNetworkPolicies(CiliumNamespace).Create(ctx, &v2.CiliumNetworkPolicy{
+	policy := &v2.CiliumNetworkPolicy{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "CiliumNetworkPolicy",
 			APIVersion: "cilium.io/v2",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      regexp.MustCompile("[:.\\[\\]]").ReplaceAllString("aerial-tunnel-"+init.Svc, "-"),
 			Namespace: CiliumNamespace,
 		},
 		Spec: &api.Rule{
@@ -119,13 +120,30 @@ crd:
 					},
 				}},
 			}},
-			Labels: nil,
 		},
-	}, metav1.CreateOptions{})
+	}
+	for i := 0; i == 0 || err != nil; i++ {
+		if i != 0 {
+			log.Println(err)
+			time.Sleep(time.Second)
+		}
+		res, err := ciliumClient.CiliumV2().CiliumNetworkPolicies(CiliumNamespace).Get(ctx, policy.Name, metav1.GetOptions{})
+		if kerrs.IsNotFound(err) {
+			res, err = ciliumClient.CiliumV2().CiliumNetworkPolicies(CiliumNamespace).Create(ctx, policy, metav1.CreateOptions{})
+			continue
+		}
+		if len(res.Spec.Ingress) != 1 || len(res.Spec.Ingress[0].ToPorts) != 1 {
+			res.Spec.Ingress = policy.Spec.Ingress
+		} else {
+			res.Spec.Ingress[0].ToPorts[0].Rules.L7 = append(res.Spec.Ingress[0].ToPorts[0].Rules.L7, init.Params)
+		}
+		res, err = ciliumClient.CiliumV2().CiliumNetworkPolicies(CiliumNamespace).Update(ctx, res, metav1.UpdateOptions{})
+	}
+	return init, nil
 }
 
-func OnClose(in interface{}) error {
-	cnp, ok := in.(*v2.CiliumNetworkPolicy)
+func OnClose(in interface{}) (err error) {
+	init, ok := in.(*Init)
 	if !ok {
 		return nil
 	}
@@ -134,11 +152,36 @@ func OnClose(in interface{}) error {
 	if err != nil {
 		return err
 	}
-	client, err := cilium.NewForConfig(config)
+	ciliumClient, err := cilium.NewForConfig(config)
 	if err != nil {
 		return err
 	}
 
-	return client.CiliumV2().CiliumNetworkPolicies(CiliumNamespace).
-		Delete(context.Background(), cnp.Name, metav1.DeleteOptions{})
+	ctx := context.Background()
+	name := regexp.MustCompile("[:.\\[\\]]").ReplaceAllString("aerial-tunnel-"+init.Svc, "-")
+	for i := 0; i == 0 || err != nil; i++ {
+		if i != 0 {
+			log.Println(err)
+			time.Sleep(time.Second)
+		}
+		res, err := ciliumClient.CiliumV2().CiliumNetworkPolicies(CiliumNamespace).Get(ctx, name, metav1.GetOptions{})
+		if kerrs.IsNotFound(err) {
+			return nil
+		}
+		var others []api.PortRuleL7
+		if len(res.Spec.Ingress) == 1 && len(res.Spec.Ingress[0].ToPorts) == 1 {
+			for _, rule := range res.Spec.Ingress[0].ToPorts[0].Rules.L7 {
+				if !rule.Equal(init.Params) {
+					others = append(others, rule)
+				}
+			}
+		}
+		if len(others) == 0 {
+			err = ciliumClient.CiliumV2().CiliumNetworkPolicies(CiliumNamespace).Delete(ctx, name, metav1.DeleteOptions{})
+		} else {
+			res.Spec.Ingress[0].ToPorts[0].Rules.L7 = others
+			res, err = ciliumClient.CiliumV2().CiliumNetworkPolicies(CiliumNamespace).Update(ctx, res, metav1.UpdateOptions{})
+		}
+	}
+	return nil
 }
