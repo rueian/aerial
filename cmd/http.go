@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"strconv"
+	"time"
 )
 
 var reply string
@@ -18,26 +18,22 @@ var httpCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Println("http server started at port:", port)
 		_ = http.ListenAndServe(":"+strconv.FormatInt(port, 10), http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			log.Println("handling request from", req.RemoteAddr)
-			var res []byte
+			var res string
 			if reply != "" {
-				res = []byte(reply + "\n\n")
-			} else if delegate != "" {
-				_, _ = w.Write([]byte(fmt.Sprintf("delegate to %s:\n", delegate)))
-				nreq, _ := http.NewRequest(req.Method, "http://"+delegate+req.RequestURI, req.Body)
-				defer req.Body.Close()
-				nreq.Header = req.Header
-				resp, err := http.DefaultClient.Do(nreq)
-				if err != nil {
-					res = []byte(err.Error() + "\n\n")
-				} else {
-					res, _ = ioutil.ReadAll(resp.Body)
-					resp.Body.Close()
-				}
-			} else {
-				res, _ = httputil.DumpRequest(req, true)
+				res = fmt.Sprintf("current time: %s\n%s\n\n", time.Now(), reply)
 			}
-			_, _ = w.Write(res)
+			if delegate != "" {
+				delegation, _ := http.NewRequest(req.Method, "http://"+delegate+req.RequestURI, req.Body)
+				delegation.Header = req.Header
+				if resp, err := http.DefaultClient.Do(delegation); err == nil {
+					rb, _ := ioutil.ReadAll(resp.Body)
+					resp.Body.Close()
+					res = fmt.Sprintf("delegate to %s:\n%s\n\n", delegate, rb)
+				} else {
+					res = fmt.Sprintf("delegate to %s:\n%s\n\n", delegate, err.Error())
+				}
+			}
+			_, _ = w.Write([]byte(res))
 		}))
 	},
 }
