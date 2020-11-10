@@ -28,7 +28,7 @@ var httpCmd = &cobra.Command{
 				if resp, err := http.DefaultClient.Do(delegation); err == nil {
 					rb, _ := ioutil.ReadAll(resp.Body)
 					resp.Body.Close()
-					res = fmt.Sprintf("delegate to %s:\n%s\n\n", delegate, rb)
+					res = fmt.Sprintf("delegate to %s:\n%s", delegate, rb)
 				} else {
 					res = fmt.Sprintf("delegate to %s:\n%s\n\n", delegate, err.Error())
 				}
