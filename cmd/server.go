@@ -75,18 +75,18 @@ var serverCmd = &cobra.Command{
 						go func(cn net.Conn, id uint32) {
 							log.Println("redirecting", cn.LocalAddr(), cn.RemoteAddr(), id)
 							defer func(cn net.Conn, id uint32) {
-								log.Println("close", cn.LocalAddr(), cn.RemoteAddr(), id)
 								msg := tunnel.Message{Type: 'c', Conn: id}
 								msg.WriteTo(conn)
 								cn.Close()
 								sos.Delete(id)
+								log.Println("close", cn.LocalAddr(), cn.RemoteAddr(), id)
 							}(cn, id)
 							for {
 								buf := buffer.PoolK.Get()
 								n, err := cn.Read(buf)
 								if n > 0 {
 									msg := tunnel.Message{Type: 'm', Conn: id, Body: buf[:n]}
-									msg.WriteTo(conn)
+									_, err = msg.WriteTo(conn)
 								}
 								buffer.PoolK.Put(buf)
 								if err == io.EOF {

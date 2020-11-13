@@ -68,7 +68,7 @@ var linkCmd = &cobra.Command{
 					msg.WriteTo(conn)
 					continue
 				}
-				log.Println("redirecting", bind)
+				log.Println("redirect", so.(net.Conn).RemoteAddr())
 				sos.Store(msg.Conn, so)
 				go func(id uint32) {
 					defer func(id uint32) {
@@ -76,6 +76,7 @@ var linkCmd = &cobra.Command{
 						msg.WriteTo(conn)
 						so.(net.Conn).Close()
 						sos.Delete(id)
+						log.Println("close", so.(net.Conn).RemoteAddr())
 					}(id)
 
 					for {
@@ -90,7 +91,6 @@ var linkCmd = &cobra.Command{
 							return
 						}
 						if err != nil {
-							log.Println(err)
 							return
 						}
 					}

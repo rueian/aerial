@@ -18,9 +18,8 @@ var httpCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Println("http server started at port:", port)
 		_ = http.ListenAndServe(":"+strconv.FormatInt(port, 10), http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			var res string
 			if reply != "" {
-				res = fmt.Sprintf("current time: %s\n%s\n\n", time.Now(), reply)
+				fmt.Fprintf(w, "current time: %s\n%s\n\n", time.Now(), reply)
 			}
 			if delegate != "" {
 				delegation, _ := http.NewRequest(req.Method, "http://"+delegate+req.RequestURI, req.Body)
@@ -28,12 +27,11 @@ var httpCmd = &cobra.Command{
 				if resp, err := http.DefaultClient.Do(delegation); err == nil {
 					rb, _ := ioutil.ReadAll(resp.Body)
 					resp.Body.Close()
-					res = fmt.Sprintf("delegate to %s:\n%s", delegate, rb)
+					fmt.Fprintf(w, "delegate to %s:\n%s", delegate, rb)
 				} else {
-					res = fmt.Sprintf("delegate to %s:\n%s\n\n", delegate, err.Error())
+					fmt.Fprintf(w, "delegate to %s:\n%s\n\n", delegate, err.Error())
 				}
 			}
-			_, _ = w.Write([]byte(res))
 		}))
 	},
 }
