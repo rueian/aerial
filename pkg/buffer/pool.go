@@ -24,4 +24,4 @@ func MakeBufPool(size int) *Pool {
 
 var Pool5 = MakeBufPool(5)
 var Pool9 = MakeBufPool(9)
-var PoolK = MakeBufPool(1024)
+var PoolK = MakeBufPool(2048)

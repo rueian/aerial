@@ -29,6 +29,10 @@ type Init struct {
 	Params map[string]string
 }
 
+const L7ProtoTeePasser = "TeePasser"
+const L7ProtoHTTPRedirect = "HTTPRedirect"
+const L7ProtoParamKey = "L7Proto"
+
 func OnBind(msg tunnel.Message, addr net.Addr) (res interface{}, err error) {
 	init := &Init{}
 	if err := json.Unmarshal(msg.Body, init); err != nil {
@@ -41,6 +45,10 @@ func OnBind(msg tunnel.Message, addr net.Addr) (res interface{}, err error) {
 
 	if len(init.Params) == 0 {
 		return nil, errors.New("init params is required")
+	}
+
+	if init.Params[L7ProtoParamKey] == "" {
+		init.Params[L7ProtoParamKey] = L7ProtoHTTPRedirect
 	}
 
 	host, port, err := net.SplitHostPort(init.Svc)
@@ -115,7 +123,7 @@ crd:
 						Protocol: api.L4Proto(targetPort.Protocol),
 					}},
 					Rules: &api.L7Rules{
-						L7Proto: "HTTPRedirect",
+						L7Proto: init.Params[L7ProtoParamKey],
 						L7:      []api.PortRuleL7{init.Params},
 					},
 				}},
