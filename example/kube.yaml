@@ -1,0 +1,251 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aerial-tunnel
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cnp-writer
+rules:
+  - apiGroups: [ "" ]
+    resources: [ "services" ]
+    verbs: [ "get" ]
+  - apiGroups: ["cilium.io"]
+    resources: ["ciliumnetworkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aeria-tunnel-cnp-writer
+subjects:
+  - kind: ServiceAccount
+    name: aerial-tunnel
+roleRef:
+  kind: Role
+  name: cnp-writer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aerial-tunnel
+  labels:
+    app: aerial-tunnel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aerial-tunnel
+  template:
+    metadata:
+      labels:
+        app: aerial-tunnel
+    spec:
+      serviceAccountName: aerial-tunnel
+      containers:
+        - name: aerial-tunnel
+          image: rueian/aerial:latest
+          args: ["server"]
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aerial-tunnel
+spec:
+  type: ClusterIP
+  selector:
+    app: aerial-tunnel
+  ports:
+    - protocol: TCP
+      name: tcp
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: service-a
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-a
+  labels:
+    app: service-a
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service-a
+  template:
+    metadata:
+      labels:
+        app: service-a
+    spec:
+      serviceAccountName: service-a
+      containers:
+        - name: service-a
+          image: rueian/aerial:latest
+          args: ["http", "--delegate", "service-b"]
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-a
+spec:
+  type: ClusterIP
+  selector:
+    app: service-a
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: service-b
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-b
+  labels:
+    app: service-b
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service-b
+  template:
+    metadata:
+      labels:
+        app: service-b
+    spec:
+      serviceAccountName: service-b
+      containers:
+        - name: service-b
+          image: rueian/aerial:latest
+          args: ["http", "--delegate", "service-c"]
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-b
+spec:
+  type: ClusterIP
+  selector:
+    app: service-b
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: service-c
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-c
+  labels:
+    app: service-c
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service-c
+  template:
+    metadata:
+      labels:
+        app: service-c
+    spec:
+      serviceAccountName: service-c
+      containers:
+        - name: service-c
+          image: rueian/aerial:latest
+          args: ["http", "--reply", "i_am_service_c"]
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-c
+spec:
+  type: ClusterIP
+  selector:
+    app: service-c
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: service-client
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-client
+  labels:
+    app: service-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-client
+  template:
+    metadata:
+      labels:
+        app: service-client
+    spec:
+      serviceAccountName: service-client
+      containers:
+        - name: service-client
+          image: curlimages/curl:latest
+          args: ["/bin/sh", "-c", "while true; do curl -s -m1 http://service-a/v1; sleep 1; done"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudflared
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  labels:
+    app: cloudflared
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      serviceAccountName: cloudflared
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:2020.11.4
+          args: ["tunnel", "--no-autoupdate", "--url", "http://service-a"]
