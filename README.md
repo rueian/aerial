@@ -5,6 +5,17 @@ and TCP tunnel to build [Visual Studio Bridge To Kubernetes](https://devblogs.mi
 
 ![example/overview.png](example/overview.png)
 
+# Why rebuild Bridge To Kubernetes?
+
+The current version of Bridge To Kubernetes has some limitations, for example:
+1. Can't have multiple pods behind a k8s service.
+2. Can't have multiple container in a pod.
+3. Can't have TLS between pods.
+
+And these limitations can solved by the help of CNI.
+
+Full slides: https://speakerdeck.com/rueian/ciliums-envoy-filter-and-vs-bridge-to-kubernetes
+
 # Example Setup
 
 ## Prepare
